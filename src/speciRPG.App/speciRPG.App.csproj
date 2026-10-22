@@ -7,6 +7,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <AssemblyName>BridgEN</AssemblyName>
+    <RootNamespace>speciRPG.App</RootNamespace>
+    <Product>BridgEN</Product>
+    <Version>0.1.0-beta.1</Version>
   </PropertyGroup>
 
   <ItemGroup>

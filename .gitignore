@@ -5,6 +5,11 @@
 
 # dotenv files
 .env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+.wrangler/
 
 # User-specific files
 *.rsuser

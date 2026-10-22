@@ -1,6 +1,8 @@
-# speciRPGの構造と処理の流れ
+# BridgENの構造と処理の流れ
 
-speciRPGは、ゲーム画面の画像を英語の文字列に変換し、その英文を翻訳APIへ送り、日本語をゲームの上に表示するWindowsアプリです。.NET 10とWPFを使用しています。
+BridgEN（旧speciRPG）は、ゲーム画面の画像を英語の文字列に変換し、その英文を翻訳APIへ送り、日本語をゲームの上に表示するWindowsアプリです。.NET 10とWPFを使用しています。内部のプロジェクト名はspeciRPGのままです。
+
+配布版は`RelayTranslationProvider`からCloudflare Workerへ接続します。`Configuration/`はサーバーURLと暗号化した招待トークンの保存を担当します。`server/worker/`に中継API・招待トークン検証・Durable Objectによる利用上限を実装しています。`scripts/publish-win.ps1`でBridgEN.exeを含む自己完結型ZIPを作成できます。詳しくは[配布手順](distribution.md)を参照してください。
 
 ## ディレクトリ構造
 
@@ -116,7 +118,7 @@ Windows OCRの結果が列ごとに分かれる場合があるため、`WindowsO
 
 確定した英文を`TranslationResultCache`で探します。完成済みの同じ英文があれば、APIを呼ばずに表示します。
 
-未保存なら、`MainWindow.xaml.cs`が`ITranslationProvider`を通して`GeminiTranslationProvider`を呼びます。APIキーは環境変数から読み、英文をGemini 3.1 Flash-LiteのストリーミングAPIへ送ります。
+未保存なら、`MainWindow.xaml.cs`が`ITranslationProvider`を通して、設定した翻訳プロバイダーを呼びます。配布版は`RelayTranslationProvider`から招待トークン付きでWorkerへ英文だけを送信し、Workerが認証・利用上限を確認してGeminiへ転送します。開発用の直接接続を選んだ場合のみ`GeminiTranslationProvider`が環境変数のAPIキーでGeminiへ接続します。
 
 `ITranslationProvider`は「翻訳を頼む共通の窓口」です。将来別の翻訳サービスを追加するときは、この窓口に合わせて実装する方針です。
 

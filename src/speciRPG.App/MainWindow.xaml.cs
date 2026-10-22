@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using speciRPG.App.Input;
 using speciRPG.App.Ocr;
 using speciRPG.App.Translation;
+using speciRPG.App.Configuration;
 
 namespace speciRPG.App;
 
@@ -29,6 +30,8 @@ public partial class MainWindow : Window
     private int _detectedKeyCount;
     private bool _isRefreshingWindowList;
     private TranslationMeasurement? _translationMeasurement;
+    private readonly TranslationSettingsStore _settingsStore = new();
+    private TranslationConnectionSettings _connectionSettings = new();
 
     public MainWindow()
     {
@@ -38,6 +41,7 @@ public partial class MainWindow : Window
         _ocrRegionSelectionWindow = new OcrRegionSelectionWindow();
         _ocrRegionSelectionWindow.RegionSelected += OnOcrRegionSelected;
         _ocrRegionSelectionWindow.SelectionCancelled += OnOcrRegionSelectionCancelled;
+        LoadConnectionSettings();
 
         _activeWindowTimer = new DispatcherTimer
         {
@@ -168,7 +172,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(GetConfiguredApiKey()))
+        if (_connectionSettings.UseRelay)
+        {
+            if (CreateTranslationProvider() is RelayTranslationProvider relay) _ = relay.WarmConnectionAsync();
+        }
+        else if (!string.IsNullOrWhiteSpace(GetConfiguredApiKey()))
             _ = GeminiTranslationProvider.WarmConnectionAsync();
         _ocrRequested = true;
         StartOcrButton.IsEnabled = false;
@@ -271,7 +279,7 @@ public partial class MainWindow : Window
             captureService.ErrorOccurred += OnOcrErrorOccurred;
             _ocrCaptureService = captureService;
             _captureTargetHandle = target.Handle;
-            OcrStatusText.Text = "英語OCRを開始しました。英文が安定するとGeminiで翻訳します。";
+                    OcrStatusText.Text = "英語OCRを開始しました。英文が安定すると翻訳します。";
         }
         catch (Exception exception)
         {
@@ -356,7 +364,7 @@ public partial class MainWindow : Window
                 {
                     OcrStatusText.Text = _translationMeasurement?.State == "受信中"
                         ? "日本語訳を受信しながら表示しています。"
-                        : "Geminiで翻訳しています。";
+                        : "翻訳の応答を待っています。";
                     return;
                 }
 
@@ -366,15 +374,11 @@ public partial class MainWindow : Window
                 // not turn those events into repeated billable requests.
                 if (_failedTranslationRevision == e.Revision) return;
 
-                var apiKey = GetConfiguredApiKey();
-                if (string.IsNullOrWhiteSpace(apiKey))
+                if (CreateTranslationProvider() is null)
                 {
-                    FinishTranslationMeasurement("APIキー未設定");
-                    OcrStatusText.Text = "APIキーが見つかりません。ユーザー環境変数 GEMINI_API_KEY または GOOGLE_API_KEY を設定してアプリを再起動してください。";
+                    FinishTranslationMeasurement("接続設定待ち");
                     return;
                 }
-
-                _translationProvider ??= new GeminiTranslationProvider(apiKey);
                 // Each attempt owns its timings. A cancelled request can finish
                 // later without changing the next attempt's measurements.
                 if (_translationMeasurement is not { State: "安定待ち" })
@@ -512,6 +516,98 @@ public partial class MainWindow : Window
             && TargetWindowComboBox.SelectedItem is WindowTarget target
             && target.Handle == targetHandle
             && WindowTargetProvider.IsActive(target);
+    }
+
+    private void LoadConnectionSettings()
+    {
+        string? error = null;
+        try
+        {
+            _connectionSettings = _settingsStore.Load() ?? new TranslationConnectionSettings();
+            if (string.IsNullOrWhiteSpace(_connectionSettings.RelayUrl))
+                _connectionSettings = _connectionSettings with { RelayUrl = TranslationSettingsStore.DefaultRelayUrl() };
+        }
+        catch (Exception exception)
+        {
+            _connectionSettings = new TranslationConnectionSettings();
+            error = $"接続設定を読み込めませんでした。再登録してください: {exception.Message}";
+        }
+        ConnectionModeComboBox.SelectedIndex = _connectionSettings.UseRelay ? 0 : 1;
+        RelayUrlTextBox.Text = _connectionSettings.RelayUrl;
+        InviteTokenBox.Password = _connectionSettings.InviteToken;
+        ConnectionSettingsExpander.IsExpanded = error is not null || (_connectionSettings.UseRelay
+            && (string.IsNullOrWhiteSpace(_connectionSettings.RelayUrl) || string.IsNullOrWhiteSpace(_connectionSettings.InviteToken)));
+        ConnectionSettingsStatusText.Text = error ?? (_connectionSettings.UseRelay
+            ? "配布されたサーバーURLと招待トークンを登録してください。トークンはこのWindowsユーザー用に暗号化して保存します。"
+            : "開発用の直接接続です。Windows環境変数のGemini APIキーを使用します。");
+    }
+
+    private void SaveConnectionSettings_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var settings = new TranslationConnectionSettings(ConnectionModeComboBox.SelectedIndex == 0,
+                RelayUrlTextBox.Text.Trim(), InviteTokenBox.Password.Trim());
+            if (settings.UseRelay) _ = new RelayTranslationProvider(settings.RelayUrl, settings.InviteToken);
+            _settingsStore.Save(settings);
+            ApplyConnectionSettings(settings);
+            ConnectionSettingsStatusText.Text = "接続設定を保存しました。";
+            OcrStatusText.Text = "接続設定を更新しました。ゲームを前面にすると再開します。";
+        }
+        catch (Exception exception)
+        {
+            ConnectionSettingsStatusText.Text = $"接続設定を保存できませんでした: {exception.Message}";
+        }
+    }
+
+    private void DeleteInviteToken_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var settings = _connectionSettings with { InviteToken = string.Empty };
+            _settingsStore.Save(settings);
+            ApplyConnectionSettings(settings);
+            InviteTokenBox.Clear();
+            ConnectionModeComboBox.SelectedIndex = settings.UseRelay ? 0 : 1;
+            RelayUrlTextBox.Text = settings.RelayUrl;
+            ConnectionSettingsStatusText.Text = "保存した招待トークンを削除しました。";
+        }
+        catch (Exception exception)
+        {
+            ConnectionSettingsStatusText.Text = $"招待トークンを削除できませんでした: {exception.Message}";
+        }
+    }
+
+    private void ApplyConnectionSettings(TranslationConnectionSettings settings)
+    {
+        StopOcrCapture();
+        _ocrOverlayWindow.Hide();
+        _translationProvider = null;
+        _connectionSettings = settings;
+        _latestRecognizedText = null;
+        ResetResults();
+    }
+
+    private ITranslationProvider? CreateTranslationProvider()
+    {
+        if (_translationProvider is not null) return _translationProvider;
+        try
+        {
+            if (_connectionSettings.UseRelay)
+                return _translationProvider = new RelayTranslationProvider(_connectionSettings.RelayUrl, _connectionSettings.InviteToken);
+            var apiKey = GetConfiguredApiKey();
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                OcrStatusText.Text = "開発用の直接接続には、ユーザー環境変数 GEMINI_API_KEY または GOOGLE_API_KEY が必要です。";
+                return null;
+            }
+            return _translationProvider = new GeminiTranslationProvider(apiKey);
+        }
+        catch (ArgumentException exception)
+        {
+            OcrStatusText.Text = $"「翻訳の接続設定」を登録してください: {exception.Message}";
+            return null;
+        }
     }
 
     private static string? GetConfiguredApiKey()

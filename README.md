@@ -1,6 +1,10 @@
-# speciRPG
+# BridgEN
 
 2D RPG の会話を読み取り、日本語訳を画面に表示する Windows アプリです。
+
+旧名はspeciRPGです。配布アプリの名前とexeはBridgENへ変更しました。既存のC#プロジェクト名・名前空間は互換性のため残しています。
+
+Cloudflare Workersの中継サーバー、招待トークンの発行、Windows用ZIP、GitHub Releasesの準備は[配布手順](docs/distribution.md)を参照してください。利用者向けの説明は[起動ガイド](docs/user-guide.md)にあります。
 
 ディレクトリ構造、各ファイルの役割、画面取得から翻訳表示までの流れは[構造と処理の解説](docs/architecture.md)を参照してください。
 
@@ -16,7 +20,9 @@
 
 API キーをソースコードや配布物に埋め込みません。初期の個人利用では利用者自身のキーを安全に設定する方式を検討し、配布時に開発者が費用をまとめて負担する場合はサーバー経由に切り替えます。
 
-ローカルで使う場合は、Windows のユーザー環境変数 `GEMINI_API_KEY` に Google AI Studio で作成したキーを設定してください。`GOOGLE_API_KEY` も読み取れます。設定後にアプリを再起動すると反映されます。キーの値を `run.bat`、ソースコード、GitHub に書かないでください。
+配布版は「翻訳の接続設定」で中継サーバーURLと利用者別の招待トークンを登録します。招待トークンはWindowsユーザーに紐付けて暗号化し、`%LOCALAPPDATA%\BridgEN\connection.json`に保存します。Gemini APIキーはCloudflare WorkerのSecretに置き、配布物には含めません。初回起動は中継サーバーモードです。
+
+開発中に従来の直接接続を使う場合は、接続設定で「Geminiへ直接接続」を明示的に選び、Windows のユーザー環境変数 `GEMINI_API_KEY` または `GOOGLE_API_KEY` にキーを設定してください。キーの値を `run.bat`、ソースコード、GitHub に書かないでください。
 
 ## 現在の状態
 

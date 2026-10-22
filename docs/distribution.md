@@ -1,0 +1,95 @@
+# BridgEN ベータ版の公開手順
+
+## 1. Cloudflareの作成画面
+
+GitHubの`giasupe/speciRPG`を選び、次を設定します。
+
+- Project name: `bridgen-api`
+- Build command: `npm run check`（型チェック。依存関係はCloudflareがpackage-lock.jsonからインストール）
+- Deploy command: `npx wrangler deploy`
+- Enable Preview builds: OFF
+- Protect with Cloudflare Access: 現段階ではOFF。Worker自身で個別の招待トークンを確認します。
+- Advanced settings / Path: `/server/worker`
+- API token: `Create new token`
+- API token name: `bridgen-deploy`
+- ビルド用のVariable name/value: 空欄
+
+`wrangler.jsonc`はWorkers Freeで使えるSQLite-backed Durable Objectを作成します。有料プランへの自動アップグレードは行いません。WorkersとDurable Objectsにはそれぞれ無料枠上限があり、上限到達時は利用できなくなります。Geminiの利用料は別です。
+
+GitHubへこのコードをpushした後にDeployします。この段階ではSecretがなくてもデプロイできますが、翻訳は503で拒否します。生成APIは呼びません。
+
+## 2. Gemini APIキーの登録
+
+Workerを開き、Settings → Variables & Secrets → Addを選びます。
+
+- Type: `Secret`
+- Variable name: `GEMINI_API_KEY`
+- Value: 管理者のGemini APIキー
+
+値はCloudflareの設定画面へ直接入力します。リポジトリ、ビルド変数、配布ZIPへ入れません。
+
+## 3. 個別の招待トークンを作る
+
+リポジトリの`server/worker`で実行します。Node.jsが必要です。
+
+```powershell
+node scripts/create-invite.mjs owner
+```
+
+このコマンドはランダムな256bitのトークンを作り、値自体をコンソールに出さず、保存先だけを表示します。
+
+- `*.token.txt`: その利用者だけへ渡す実際のトークン。
+- `*.registration.json`: 今回の利用者だけの登録データ。
+- `invitation-registry.json`: 全利用者の登録データ。トークンのSHA-256と利用者IDだけを含みます。
+
+保存先は`%LOCALAPPDATA%\BridgEN\admin\invites`です。GitHubや配布ZIPには含まれません。
+
+Workerにもう1つSecretを追加します。
+
+- Type: `Secret`
+- Variable name: `INVITE_TOKENS_JSON`
+- Value: `invitation-registry.json`の内容全体
+
+新しい利用者を追加した後も、統合済みの`invitation-registry.json`でSecretを更新します。同じIDでもう一度生成すると、そのIDの前のトークンを置き換えます。利用者は最大32人、登録JSONは5,000バイト以内に制限しています。トークンを失効させる場合は登録JSONからそのハッシュの項目を削除し、Secretを更新します。
+
+生のトークンをGemini APIキー欄へ入れたり、登録JSONをアプリの招待トークン欄へ入れたりしないでください。
+
+## 4. 接続する
+
+Workerの公開URLに`/health`を付けて開きます。`service: BridgEN`と`status: ok`が返れば配置されています。healthはSecretの登録状態までは判定しません。
+
+BridgENの「翻訳の接続設定」で、中継サーバーを選び、WorkerのベースURL（`/health`や`/translate`を含めない）と`*.token.txt`の値を登録します。保存後にゲームのOCRを開始します。
+
+サーバーは英語から日本語への翻訳だけを受け付けます。モデルとシステム指示はサーバー側で固定し、1回の英文は2,000文字、生成は最大2,048トークンです。受信は45秒で打ち切ります。正常終了していない訳を完成結果として保存しません。
+
+## 利用上限と停止
+
+`wrangler.jsonc`の初期値は、全体1,000回/日・60回/分、1人300回/日・20回/分です。1つのDurable Object内で予約を永続化してからGeminiへ進むため、異なる拠点からの同時利用でも全体上限を共有します。Durable Objectが使えない場合は翻訳も拒否します。
+
+日次上限はUTC 00:00（日本時間09:00）で切り替わります。分単位の制限は固定の暦上の1分です。上限は料金ではなくリクエスト試行回数であり、入力長・出力長によりGeminiの費用は変わります。送信後のキャンセル・エラーも消費した扱いです。予算の厳密な金額保証ではありません。
+
+上限変更はwrangler.jsoncの値を変えてpushします。緊急停止はWorkerの実行時変数`TRANSLATION_ENABLED`を文字列`false`へ設定します。再開はその変数を削除するか`true`へ変更します。これは認証を省略する設定ではありません。
+
+Workerは本文・画像・生トークンを保存せず、コードからリクエスト本文をログ出力しません。運用途中でCloudflareのログ収集を追加する際にもAuthorizationや本文を記録しないでください。Google側の保持条件は別途利用中のAPIの設定・規約に従います。
+
+## 5. Windows配布ZIP
+
+リポジトリ直下から次を実行します。URLは実際のWorkerのものへ置き換えます。
+
+```powershell
+.\scripts\publish-win.ps1 -Version 0.1.0-beta.1 -RelayUrl https://bridgen-api.YOUR-SUBDOMAIN.workers.dev
+```
+
+URL未確定の場合は`publish.bat`だけでも発行でき、利用者が起動後に設定画面でURLを登録できます。
+
+`artifacts/BridgEN-0.1.0-beta.1-win-x64.zip`と`.zip.sha256`が作られます。.NETを同梱し、`BridgEN.exe`と必要なDLL、公開URLだけの既定設定、利用説明を含みます。Geminiキーや招待トークンは含めません。WPFとWinRTの互換性のため初期版はトリミング・単一ファイル化を使いません。内部のプロジェクト名・名前空間は互換性のためspeciRPGのままです。
+
+## 6. GitHub Releases
+
+1. サーバー接続・OCR・ストリーミング・認証失敗・利用上限・キャンセルを確認する。
+2. GitHubのReleasesで下書きを作り、タグを`v0.1.0-beta.1`とする。
+3. ZIPとSHA-256ファイルを添付する。GitHubが自動生成するSource code ZIPは、起動用の配布物ではありません。
+4. Pre-releaseにし、対応環境・英語OCRの導入・利用上限・英文がGoogleへ送られることを記載する。
+5. 招待した利用者へトークンを個別に渡してから公開する。トークンはRelease本文や公開Issueに書かない。
+
+デプロイ・実API接続・公開前の動作確認が済むまでは、配布可能な完成版として扱いません。

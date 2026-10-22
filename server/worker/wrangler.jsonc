@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bridgen-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-22",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "GLOBAL_DAILY_LIMIT": "1000",
+    "USER_DAILY_LIMIT": "300",
+    "GLOBAL_MINUTE_LIMIT": "60",
+    "USER_MINUTE_LIMIT": "20"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "TRANSLATION_BUDGET", "class_name": "TranslationBudget" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TranslationBudget"] }],
+  "observability": { "enabled": false }
+}
