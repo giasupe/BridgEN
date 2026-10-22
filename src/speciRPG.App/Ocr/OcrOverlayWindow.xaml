@@ -1,0 +1,30 @@
+<Window x:Class="speciRPG.App.Ocr.OcrOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="760"
+        SizeToContent="Height"
+        MaxHeight="260"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True">
+    <Border Margin="8"
+            Padding="16,12"
+            Background="#E51C2027"
+            BorderBrush="#80FFFFFF"
+            BorderThickness="1"
+            CornerRadius="10">
+        <ScrollViewer MaxHeight="220"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <TextBlock x:Name="RecognizedTextBlock"
+                       FontSize="22"
+                       FontWeight="SemiBold"
+                       Foreground="White"
+                       TextWrapping="Wrap" />
+        </ScrollViewer>
+    </Border>
+</Window>
