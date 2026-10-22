@@ -8,6 +8,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+if (-not $PSBoundParameters.ContainsKey('RelayUrl')) {
+    $defaultsPath = Join-Path $projectRoot 'src/speciRPG.App/bridgen.defaults.json'
+    $RelayUrl = [string](Get-Content -LiteralPath $defaultsPath -Raw | ConvertFrom-Json).relayUrl
+}
 if ($RelayUrl) {
     $relayUri = [Uri]$RelayUrl
     if (-not $relayUri.IsAbsoluteUri -or $relayUri.Scheme -ne 'https' -or $relayUri.UserInfo -or $relayUri.Query -or $relayUri.Fragment) {

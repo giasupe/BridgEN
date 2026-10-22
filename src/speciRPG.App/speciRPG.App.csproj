@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+    <None Update="bridgen.defaults.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

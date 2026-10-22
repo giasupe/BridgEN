@@ -58,6 +58,8 @@ Workerにもう1つSecretを追加します。
 
 Workerの公開URLに`/health`を付けて開きます。`service: BridgEN`と`status: ok`が返れば配置されています。healthはSecretの登録状態までは判定しません。
 
+現在の公開URLは`https://bridgen-api.gspe.workers.dev`、確認用URLは`https://bridgen-api.gspe.workers.dev/health`です。404と`error code: 1042`が返る場合は、まずSettings → Domains & Routesでworkers.devが有効か、Deploymentsに本番デプロイがあるか、URLが一致しているかを確認します。
+
 BridgENの「翻訳の接続設定」で、中継サーバーを選び、WorkerのベースURL（`/health`や`/translate`を含めない）と`*.token.txt`の値を登録します。保存後にゲームのOCRを開始します。
 
 サーバーは英語から日本語への翻訳だけを受け付けます。モデルとシステム指示はサーバー側で固定し、1回の英文は2,000文字、生成は最大2,048トークンです。受信は45秒で打ち切ります。正常終了していない訳を完成結果として保存しません。
@@ -74,13 +76,13 @@ Workerは本文・画像・生トークンを保存せず、コードからリ�
 
 ## 5. Windows配布ZIP
 
-リポジトリ直下から次を実行します。URLは実際のWorkerのものへ置き換えます。
+リポジトリ直下から次を実行します。
 
 ```powershell
-.\scripts\publish-win.ps1 -Version 0.1.0-beta.1 -RelayUrl https://bridgen-api.YOUR-SUBDOMAIN.workers.dev
+.\publish.bat
 ```
 
-URL未確定の場合は`publish.bat`だけでも発行でき、利用者が起動後に設定画面でURLを登録できます。
+既定の公開URLは`src/speciRPG.App/bridgen.defaults.json`から読み込み、通常起動と配布ZIPの両方に反映されます。発行時だけ別の接続先にする場合は`.\scripts\publish-win.ps1 -RelayUrl https://別のWorker.workers.dev`を指定します。保存済みの接続先があればそちらを優先し、利用者が起動後に変更することもできます。
 
 `artifacts/BridgEN-0.1.0-beta.1-win-x64.zip`と`.zip.sha256`が作られます。.NETを同梱し、`BridgEN.exe`と必要なDLL、公開URLだけの既定設定、利用説明を含みます。Geminiキーや招待トークンは含めません。WPFとWinRTの互換性のため初期版はトリミング・単一ファイル化を使いません。内部のプロジェクト名・名前空間は互換性のためspeciRPGのままです。
 
