@@ -18,7 +18,7 @@ namespace speciRPG.App.Ocr;
 public sealed class WindowOcrCaptureService : IDisposable
 {
     private static readonly Guid GraphicsCaptureItemIid = new("79C3F95B-31F7-4EC2-A464-632EF5D30760");
-    private static readonly TimeSpan RecognitionInterval = TimeSpan.FromMilliseconds(800);
+    private static readonly TimeSpan RecognitionInterval = TimeSpan.FromMilliseconds(400);
     private static readonly TimeSpan ConfirmationInterval = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan RetryRecognitionInterval = TimeSpan.FromMilliseconds(1500);
     private static readonly TimeSpan PeriodicQualityCheckInterval = TimeSpan.FromSeconds(6);

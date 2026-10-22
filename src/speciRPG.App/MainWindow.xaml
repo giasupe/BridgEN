@@ -75,7 +75,7 @@
                             </StackPanel>
                         </Grid>
                         <TextBlock Margin="0,10,0,0" FontSize="11" Foreground="#59616B" TextWrapping="Wrap"
-                                   Text="単位: ms（1,000 ms = 1秒）。取得→表示開始は訳が最初に表示されるまで。描画完了と取得前の待ち時間は含みません。OCR間隔: 確認中250 ms／確定後800 ms。" />
+                                   Text="単位: ms（1,000 ms = 1秒）。取得→表示開始は訳が最初に表示されるまで。描画完了と取得前の待ち時間は含みません。OCR間隔: 確認中250 ms／確定後400 ms。" />
                     </StackPanel>
                 </Border>
 
