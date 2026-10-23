@@ -1,21 +1,21 @@
 # BridgENの構造と処理の流れ
 
-BridgEN（旧speciRPG）は、ゲーム画面の画像を英語の文字列に変換し、その英文を翻訳APIへ送り、日本語をゲームの上に表示するWindowsアプリです。.NET 10とWPFを使用しています。内部のプロジェクト名はspeciRPGのままです。
+BridgENは、ゲーム画面の画像を英語の文字列に変換し、その英文を翻訳APIへ送り、日本語をゲームの上に表示するWindowsアプリです。.NET 10とWPFを使用し、プロジェクト名・名前空間もBridgENに統一しています。
 
 配布版は`RelayTranslationProvider`からCloudflare Workerへ接続します。`Configuration/`はサーバーURLと暗号化した招待トークンの保存を担当します。`server/worker/`に中継API・招待トークン検証・Durable Objectによる利用上限を実装しています。`scripts/publish-win.ps1`でBridgEN.exeを含む自己完結型ZIPを作成できます。詳しくは[配布手順](distribution.md)を参照してください。
 
 ## ディレクトリ構造
 
 ```text
-rpg-screen-translator/
-├─ speciRPG.sln                         プロジェクトをまとめるソリューション
+BridgEN/
+├─ BridgEN.sln                         プロジェクトをまとめるソリューション
 ├─ run.bat                              ビルドしてからアプリを起動
 ├─ README.md                            導入方法、現在の仕様、開発上の課題
 ├─ docs/
 │  └─ architecture.md                    この解説
 ├─ src/
-│  └─ speciRPG.App/
-│     ├─ speciRPG.App.csproj             .NET・WPF・外部ライブラリの設定
+│  └─ BridgEN.App/
+│     ├─ BridgEN.App.csproj             .NET・WPF・外部ライブラリの設定
 │     ├─ App.xaml / App.xaml.cs          アプリの起動入口と共通設定
 │     ├─ AssemblyInfo.cs                WPFのテーマ参照などの設定
 │     ├─ MainWindow.xaml                クライアント画面の部品と配置
@@ -47,12 +47,12 @@ rpg-screen-translator/
 │        ├─ GeminiStreamReader.cs       ストリーミングで届く文章の読み取り
 │        └─ TranslationResultCache.cs   完成した訳を最大128件再利用
 └─ tests/
-   ├─ speciRPG.Ocr.Regression/           文章の揺れ・行の組み直しなどの確認用
+   ├─ BridgEN.Ocr.Regression/           文章の揺れ・行の組み直しなどの確認用
    │  ├─ Program.cs
-   │  └─ speciRPG.Ocr.Regression.csproj
-   └─ speciRPG.Ocr.WindowsSmoke/         Windows英語OCRと画像補正の確認用
+   │  └─ BridgEN.Ocr.Regression.csproj
+   └─ BridgEN.Ocr.WindowsSmoke/         Windows英語OCRと画像補正の確認用
       ├─ Program.cs
-      ├─ speciRPG.Ocr.WindowsSmoke.csproj
+      ├─ BridgEN.Ocr.WindowsSmoke.csproj
       └─ Fixtures/tutorial-controls.png 確認に使うゲーム画像
 ```
 
@@ -72,7 +72,7 @@ rpg-screen-translator/
 
 `run.bat`が`dotnet build`を実行し、成功すると`dotnet run --no-build`で起動します。WPFの`App.xaml`から`MainWindow`が開きます。
 
-`WindowTarget.cs`で取得した一覧からゲームを選び、`OcrRegionSelectionWindow`で会話欄をドラッグします。選んだ範囲は`OcrCaptureRegion`に保存します。
+`WindowTarget.cs`で取得した一覧からゲームを選びます。「読む範囲を選択」を押すと、`MainWindow.xaml.cs`がOCRと翻訳表示を一時停止し、`WindowTargetProvider.TryActivateAsync`でゲームを前面に移します。最小化されている場合は復元し、最大1秒間、復元と前面状態を確認します。成功した場合だけBridgENを隠し、`OcrRegionSelectionWindow`で会話欄をドラッグできるようにします。選択中はOCRを再開せず、選んだ範囲を`OcrCaptureRegion`に保存した後、BridgENへ戻ります。前面化に失敗した場合は範囲選択を開始せず、再試行の案内を表示します。
 
 ### 2. 開始して、前面のゲームだけを読む
 

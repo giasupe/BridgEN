@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 echo === Building BridgEN ===
-dotnet build "%~dp0speciRPG.sln"
+dotnet build "%~dp0BridgEN.sln"
 if errorlevel 1 (
     echo.
     echo Build failed.
@@ -13,7 +13,7 @@ if errorlevel 1 (
 
 echo.
 echo === Running BridgEN ===
-dotnet run --no-build --project "%~dp0src\speciRPG.App\speciRPG.App.csproj"
+dotnet run --no-build --project "%~dp0src\BridgEN.App\BridgEN.App.csproj"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo.

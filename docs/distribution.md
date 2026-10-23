@@ -2,7 +2,7 @@
 
 ## 1. Cloudflareの作成画面
 
-GitHubの`giasupe/speciRPG`を選び、次を設定します。
+GitHubでこのプロジェクトを保存しているリポジトリを選び、次を設定します。
 
 - Project name: `bridgen-api`
 - Build command: `npm run check`（型チェック。依存関係はCloudflareがpackage-lock.jsonからインストール）
@@ -30,17 +30,27 @@ Workerを開き、Settings → Variables & Secrets → Addを選びます。
 
 ## 3. 個別の招待トークンを作る
 
-リポジトリの`server/worker`で実行します。Node.jsが必要です。
+Windowsでは、管理者本人のPCでリポジトリ直下の`create-invite.bat`を実行します。Windows PowerShellを使うためNode.jsは不要です。Codexから実行した際のユーザープロファイルや画面が、管理者のWindows環境と同じとは限りません。トークンは手元のPCで発行し、そこに表示された保存先を使ってください。
 
 ```powershell
-node scripts/create-invite.mjs owner
+.\create-invite.bat owner
 ```
 
-このコマンドはランダムな256bitのトークンを作り、値自体をコンソールに出さず、保存先だけを表示します。
+このコマンドはランダムな256bitのトークンを作り、値自体をコンソールに出さず、保存先だけを表示してフォルダーを開きます。
+
+`create-invite.bat`をダブルクリックするか、引数なしで`.\create-invite.bat`を実行すると、その場で任意のUserIDを入力できます。`owner`や`friend01`は例であり、固定された名前ではありません。半角英数字・`-`・`_`で1～64文字、先頭は半角英数字にします。空欄・無効な入力・登録済みのIDの場合は、説明を表示して入力をやり直せます。予約語の`constructor`と`prototype`は使えません。
+
+コマンドで直接指定する場合は`.\create-invite.bat -UserId giasupe`のように指定します。引数で指定したIDが無効・登録済みなら、既存のトークンを変更せず終了します。
+
+batは起動したWindows PowerShellプロセスだけに`-ExecutionPolicy RemoteSigned`を指定します。ローカルの発行スクリプトを実行するための指定で、CurrentUserやLocalMachineのポリシーを恒久変更しません。組織のグループポリシーがある場合はそちらが優先されます。
+
+Node.jsを使う従来の方法も残しています。リポジトリの`server/worker`で`node scripts/create-invite.mjs owner`を実行します。このNode版は同じIDの再発行で古いトークンを置き換えるため、既存のものを見る目的では実行しないでください。
 
 - `*.token.txt`: その利用者だけへ渡す実際のトークン。
 - `*.registration.json`: 今回の利用者だけの登録データ。
 - `invitation-registry.json`: 全利用者の登録データ。トークンのSHA-256と利用者IDだけを含みます。
+
+既存の統合登録ファイルを更新するときは、前の内容を`invitation-registry-識別子.backup.json`へ保存します。Cloudflareへ登録するのは最新の`invitation-registry.json`です。
 
 保存先は`%LOCALAPPDATA%\BridgEN\admin\invites`です。GitHubや配布ZIPには含まれません。
 
@@ -50,7 +60,7 @@ Workerにもう1つSecretを追加します。
 - Variable name: `INVITE_TOKENS_JSON`
 - Value: `invitation-registry.json`の内容全体
 
-新しい利用者を追加した後も、統合済みの`invitation-registry.json`でSecretを更新します。同じIDでもう一度生成すると、そのIDの前のトークンを置き換えます。利用者は最大32人、登録JSONは5,000バイト以内に制限しています。トークンを失効させる場合は登録JSONからそのハッシュの項目を削除し、Secretを更新します。
+新しい利用者を追加した後も、統合済みの`invitation-registry.json`でSecretを更新します。利用者は最大32人、登録JSONは5,000バイト以内に制限しています。トークンを失効させる場合は登録JSONからそのハッシュの項目を削除し、Secretを更新します。ローカルに登録JSONがない状態から発行した場合、Cloudflareにだけ存在する登録は自動取得されません。既存の配布先を維持するには、Cloudflareの現在の登録内容と新しい登録を統合してからSecretを更新してください。
 
 生のトークンをGemini APIキー欄へ入れたり、登録JSONをアプリの招待トークン欄へ入れたりしないでください。
 
@@ -82,9 +92,11 @@ Workerは本文・画像・生トークンを保存せず、コードからリ�
 .\publish.bat
 ```
 
-既定の公開URLは`src/speciRPG.App/bridgen.defaults.json`から読み込み、通常起動と配布ZIPの両方に反映されます。発行時だけ別の接続先にする場合は`.\scripts\publish-win.ps1 -RelayUrl https://別のWorker.workers.dev`を指定します。保存済みの接続先があればそちらを優先し、利用者が起動後に変更することもできます。
+既定の公開URLは`src/BridgEN.App/bridgen.defaults.json`から読み込み、通常起動と配布ZIPの両方に反映されます。発行時だけ別の接続先にする場合は`.\scripts\publish-win.ps1 -RelayUrl https://別のWorker.workers.dev`を指定します。保存済みの接続先があればそちらを優先し、利用者が起動後に変更することもできます。
 
-`artifacts/BridgEN-0.1.0-beta.1-win-x64.zip`と`.zip.sha256`が作られます。.NETを同梱し、`BridgEN.exe`と必要なDLL、公開URLだけの既定設定、利用説明を含みます。Geminiキーや招待トークンは含めません。WPFとWinRTの互換性のため初期版はトリミング・単一ファイル化を使いません。内部のプロジェクト名・名前空間は互換性のためspeciRPGのままです。
+`artifacts/BridgEN-0.1.0-beta.1-win-x64.zip`と`.zip.sha256`が作られます。.NETを同梱し、`BridgEN.exe`と必要なDLL、公開URLだけの既定設定、利用説明を含みます。Geminiキーや招待トークンは含めません。WPFとWinRTの互換性のため初期版はトリミング・単一ファイル化を使いません。プロジェクト名・名前空間もBridgENに統一しています。
+
+`SatelliteResourceLanguages`を`en;ja`に設定し、.NETやWPFの表示メッセージ用データは英語・日本語だけを同梱します。英語は通常DLL本体に含まれるため、独立した`en`フォルダーがない場合があります。この設定はOCRの認識言語やGeminiの翻訳言語を変更するものではありません。
 
 ## 6. GitHub Releases
 

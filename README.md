@@ -2,7 +2,7 @@
 
 2D RPG の会話を読み取り、日本語訳を画面に表示する Windows アプリです。
 
-旧名はspeciRPGです。配布アプリの名前とexeはBridgENへ変更しました。既存のC#プロジェクト名・名前空間は互換性のため残しています。
+アプリ名・C#プロジェクト名・名前空間はBridgENに統一しています。
 
 Cloudflare Workersの中継サーバー、招待トークンの発行、Windows用ZIP、GitHub Releasesの準備は[配布手順](docs/distribution.md)を参照してください。利用者向けの説明は[起動ガイド](docs/user-guide.md)にあります。
 
@@ -71,7 +71,7 @@ APIキーが設定されていれば「OCRを開始」を押した時点で、AP
 
 別の台詞や文字送りによる文章の伸びを検出すると安定待ちをやり直します。小さな単語変更は、変化した画面で同じ新しい読み取りが連続したときに切り替えます。そのため点数の低い次の台詞にも追従できます。長い単語や辞書にない単語という理由だけで減点する処理も見直しています。類似性と画像比較はいずれも推定のため、任意のゲームで誤認識をなくせる保証はありません。
 
-診断用に `%LOCALAPPDATA%\speciRPG\logs\ocr-diagnostics.jsonl` へ時刻、画像処理の種類、画面差分の有無、採用理由、文字数、安定時間を記録します。OCR本文、画像、APIキーは記録しません。ファイルは約1MBで切り替え、前回分を1ファイルだけ保持します。保存できない場合もOCR自体は継続します。
+診断用に `%LOCALAPPDATA%\BridgEN\logs\ocr-diagnostics.jsonl` へ時刻、画像処理の種類、画面差分の有無、採用理由、文字数、安定時間を記録します。OCR本文、画像、APIキーは記録しません。ファイルは約1MBで切り替え、前回分を1ファイルだけ保持します。保存できない場合もOCR自体は継続します。
 
 参考調査として、[OwOCRの文章・重複処理](https://github.com/AuroraWright/owocr)と[Game Live Translatorの文字単位の合流処理](https://github.com/yuntoxic/game-live-translator)を確認しました。これらのコードは取り込んでいません。
 
@@ -79,7 +79,7 @@ APIキーが設定されていれば「OCRを開始」を押した時点で、AP
 
 Windows OCRが返すまとまりを、そのまま画面上の1行として扱いません。認識された全単語の座標を取り出し、上下の重なりと高さから同じ行に属する単語をまとめ、上から下・各行の左から右の順に並べ直します。行の位置には中央値を使い、大きな括弧や小さい文字で隣の行へずれにくくしています。行数を3などに固定する処理ではありません。キーボード記法の `[]` と `/` も文字の採点で通常の記号として扱います。
 
-添付された操作説明の画像（`tests/speciRPG.Ocr.WindowsSmoke/Fixtures/tutorial-controls.png`）では、強いコントラスト補正後にOCRが8個のまとまりを返す問題を再現しました。座標から組み直した結果は次の3行です。
+添付された操作説明の画像（`tests/BridgEN.Ocr.WindowsSmoke/Fixtures/tutorial-controls.png`）では、強いコントラスト補正後にOCRが8個のまとまりを返す問題を再現しました。座標から組み直した結果は次の3行です。
 
 ```text
 Hold [Arrow keys] to move
@@ -91,10 +91,10 @@ Tap [Z/Space] to Investigate or talk
 
 ### 回帰確認
 
-`dotnet run --project tests/speciRPG.Ocr.Regression/speciRPG.Ocr.Regression.csproj`
+`dotnet run --project tests/BridgEN.Ocr.Regression/BridgEN.Ocr.Regression.csproj`
 
 報告された英文の往復、明るい背景の移動、候補保持、別の台詞、1文字の変更、文字送り、空読み、空白、走査線、点滅、サイズ変更などを確認します。明るい背景が移動する2ケースは、旧方式で失敗することを確認してから修正しました。画像には合成画像を使います。
 
-`dotnet run --project tests/speciRPG.Ocr.WindowsSmoke/speciRPG.Ocr.WindowsSmoke.csproj`
+`dotnet run --project tests/BridgEN.Ocr.WindowsSmoke/BridgEN.Ocr.WindowsSmoke.csproj`
 
 Windowsのen-US OCRと実際の画像前処理を使う確認です。WPFで生成した英語の会話画像に走査線と移動する明るい背景を重ね、継続した読み取りの安定と、次の台詞への切り替えを検証します。ネットワークやAPIキーは使いません。添付された実ゲームの操作説明画像でも、全4種類の画像処理を比較し、最良の候補が正しい3行になることを確認します。起動中ゲームからの連続キャプチャ全体を検証した結果ではありません。

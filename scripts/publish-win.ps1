@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (-not $PSBoundParameters.ContainsKey('RelayUrl')) {
-    $defaultsPath = Join-Path $projectRoot 'src/speciRPG.App/bridgen.defaults.json'
+    $defaultsPath = Join-Path $projectRoot 'src/BridgEN.App/bridgen.defaults.json'
     $RelayUrl = [string](Get-Content -LiteralPath $defaultsPath -Raw | ConvertFrom-Json).relayUrl
 }
 if ($RelayUrl) {
@@ -21,7 +21,7 @@ if ($RelayUrl) {
 
 $artifactRoot = Join-Path $projectRoot 'artifacts'
 $publishDirectory = Join-Path $artifactRoot ('publish-' + [Guid]::NewGuid().ToString('N'))
-$projectPath = Join-Path $projectRoot 'src/speciRPG.App/speciRPG.App.csproj'
+$projectPath = Join-Path $projectRoot 'src/BridgEN.App/BridgEN.App.csproj'
 New-Item -ItemType Directory -Path $publishDirectory -Force | Out-Null
 & dotnet publish $projectPath -c Release -r $Runtime --self-contained true `
     -p:PublishSingleFile=false -p:PublishTrimmed=false "-p:Version=$Version" -o $publishDirectory
