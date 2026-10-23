@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Threading;
 using BridgEN.App.Input;
 using BridgEN.App.Ocr;
@@ -34,6 +35,11 @@ public partial class MainWindow : Window
     private TranslationMeasurement? _translationMeasurement;
     private readonly TranslationSettingsStore _settingsStore = new();
     private TranslationConnectionSettings _connectionSettings = new();
+    private readonly OcrOperationSettingsStore _operationSettingsStore = new();
+    private OcrOperationSettings _operationSettings = new();
+    private bool _isLoadingOperationSettings;
+    private CancellationTokenSource? _manualCaptureTimeout;
+    private bool IsManualMode => _operationSettings.Mode == OcrOperationMode.Manual;
 
     public MainWindow()
     {
@@ -44,6 +50,7 @@ public partial class MainWindow : Window
         _ocrRegionSelectionWindow.RegionSelected += OnOcrRegionSelected;
         _ocrRegionSelectionWindow.SelectionCancelled += OnOcrRegionSelectionCancelled;
         LoadConnectionSettings();
+        LoadOperationSettings();
 
         _activeWindowTimer = new DispatcherTimer
         {
@@ -64,7 +71,8 @@ public partial class MainWindow : Window
         {
             _keyboardMonitor = new GlobalKeyboardMonitor();
             _keyboardMonitor.KeyPressed += OnTrackedKeyPressed;
-            KeyboardStatusText.Text = "監視中: Z / Enter";
+            _keyboardMonitor.ManualOcrRequested += OnManualOcrRequested;
+            UpdateOperationModeDisplay();
         }
         catch (Win32Exception exception)
         {
@@ -95,6 +103,134 @@ public partial class MainWindow : Window
         _detectedKeyCount++;
         LastKeyText.Text = $"最後に検知したキー: {e.KeyName}（合計 {_detectedKeyCount} 回）";
         DetectedKeyCountText.Text = $"対象ウィンドウ内の入力回数: {_detectedKeyCount} 回";
+    }
+
+    private void LoadOperationSettings()
+    {
+        try
+        {
+            _operationSettings = _operationSettingsStore.Load();
+        }
+        catch (Exception exception)
+        {
+            _operationSettings = new OcrOperationSettings();
+            OperationSettingsStatusText.Text = $"操作設定を読み込めないためオートマチックで起動しました: {exception.Message}";
+        }
+        UpdateOperationModeDisplay();
+    }
+
+    private void UpdateOperationModeDisplay()
+    {
+        _isLoadingOperationSettings = true;
+        try
+        {
+            OperationModeComboBox.SelectedIndex = IsManualMode ? 1 : 0;
+            ManualHotkeyPanel.Visibility = IsManualMode ? Visibility.Visible : Visibility.Collapsed;
+            ManualHotkeyBox.Text = _operationSettings.EffectiveHotkey.DisplayName;
+            OperationModeHelpText.Text = IsManualMode
+                ? $"待機を開始し、ゲームが前面のときに {_operationSettings.EffectiveHotkey.DisplayName} を押すと、1回だけ読み取り・翻訳します。"
+                : "OCRを開始すると、ゲームが前面にある間、文章を自動で読み取り・翻訳します。";
+            StartOcrButton.Content = IsManualMode ? "待機を開始" : "OCRを開始";
+            TimingHelpText.Text = "単位: ms（1,000 ms = 1秒）。取得→表示開始は訳が最初に表示されるまで。描画完了と取得前の待ち時間は含みません。"
+                + (IsManualMode ? "マニュアル: キーを押すごとに1枚取得し、連続画像による安定待ちは行いません。"
+                    : "OCR間隔: 確認中250 ms／確定後400 ms。");
+            if (_keyboardMonitor is not null)
+            {
+                _keyboardMonitor.SetManualHotkey(IsManualMode ? _operationSettings.EffectiveHotkey : null);
+                KeyboardStatusText.Text = IsManualMode
+                    ? $"監視中: Z / Enter（カウント）、{_operationSettings.EffectiveHotkey.DisplayName}（マニュアル実行）"
+                    : "監視中: Z / Enter（カウント）";
+            }
+        }
+        finally
+        {
+            _isLoadingOperationSettings = false;
+        }
+    }
+
+    private void OperationModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsInitialized || _isLoadingOperationSettings) return;
+        SaveOperationSettings(_operationSettings with
+        {
+            Mode = OperationModeComboBox.SelectedIndex == 1 ? OcrOperationMode.Manual : OcrOperationMode.Automatic
+        });
+    }
+
+    private void ManualHotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        e.Handled = true;
+        if (e.IsRepeat) return;
+        var key = e.Key == Key.System ? e.SystemKey
+            : e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
+        var hotkey = new ManualOcrHotkey(KeyInterop.VirtualKeyFromKey(key), Keyboard.Modifiers);
+        if (!hotkey.IsValid)
+        {
+            OperationSettingsStatusText.Text = "Ctrlなどの修飾キーには、実行するキーを組み合わせてください。";
+            return;
+        }
+        SaveOperationSettings(_operationSettings with { ManualHotkey = hotkey });
+    }
+
+    private void SaveOperationSettings(OcrOperationSettings settings)
+    {
+        try
+        {
+            _operationSettingsStore.Save(settings);
+        }
+        catch (Exception exception)
+        {
+            UpdateOperationModeDisplay();
+            OperationSettingsStatusText.Text = $"操作設定を保存できませんでした: {exception.Message}";
+            return;
+        }
+
+        StopOcrCapture();
+        _ocrOverlayWindow.Hide();
+        _latestRecognizedText = null;
+        ResetResults();
+        _operationSettings = settings;
+        UpdateOperationModeDisplay();
+        OperationSettingsStatusText.Text = "操作設定を保存しました。";
+        OcrStatusText.Text = IsManualMode
+            ? (_ocrRequested
+                ? $"マニュアル待機中: ゲームを前面にして {_operationSettings.EffectiveHotkey.DisplayName} を押してください。"
+                : "マニュアルに切り替えました。「待機を開始」を押してください。")
+            : (_ocrRequested ? "オートマチックに切り替えました。ゲームを前面にすると自動で読み取ります。"
+                : "オートマチックに切り替えました。「OCRを開始」を押してください。");
+        UpdateOcrCaptureState();
+    }
+
+    private void OnManualOcrRequested(object? sender, EventArgs e)
+    {
+        if (_isClosed || !IsManualMode || !_ocrRequested || _isSelectingOcrRegion
+            || TargetWindowComboBox.SelectedItem is not WindowTarget target
+            || !WindowTargetProvider.IsActive(target)) return;
+
+        var settings = _operationSettings;
+        // Never capture a window or call OCR/API from the low-level keyboard hook.
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_isClosed || !ReferenceEquals(settings, _operationSettings) || !_ocrRequested || _isSelectingOcrRegion
+                || TargetWindowComboBox.SelectedItem is not WindowTarget current
+                || current.Handle != target.Handle || !WindowTargetProvider.IsActive(current)) return;
+            if (_ocrCaptureService is not null)
+            {
+                OcrStatusText.Text = "読み取り中です。完了してからもう一度実行キーを押してください。";
+                return;
+            }
+            if (_ocrCaptureRegion is null) return;
+
+            StopOcrCapture();
+            _ocrOverlayWindow.Hide();
+            _latestRecognizedText = null;
+            RecognizedTextBox.Clear();
+            TranslationResultTextBox.Clear();
+            _translationMeasurement = null;
+            ShowOcrTimings(null);
+            UpdateTranslationTimingDisplay();
+            StartCapture(current);
+        });
     }
 
     private void RefreshWindowsButton_Click(object sender, RoutedEventArgs e)
@@ -219,6 +355,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (IsManualMode && _keyboardMonitor is null)
+        {
+            OcrStatusText.Text = "キー監視を開始できていないため、マニュアルを利用できません。アプリを起動し直してください。";
+            return;
+        }
+
         if (_connectionSettings.UseRelay)
         {
             if (CreateTranslationProvider() is RelayTranslationProvider relay) _ = relay.WarmConnectionAsync();
@@ -228,7 +370,9 @@ public partial class MainWindow : Window
         _ocrRequested = true;
         StartOcrButton.IsEnabled = false;
         StopOcrButton.IsEnabled = true;
-        OcrStatusText.Text = "ゲームのウィンドウを前面にすると、英語OCRを開始します。";
+        OcrStatusText.Text = IsManualMode
+            ? $"マニュアル待機中: ゲームを前面にして {_operationSettings.EffectiveHotkey.DisplayName} を押してください。"
+            : "ゲームのウィンドウを前面にすると、英語OCRを開始します。";
         UpdateOcrCaptureState();
     }
 
@@ -237,7 +381,7 @@ public partial class MainWindow : Window
         _ocrRequested = false;
         StopOcrCapture();
         _ocrOverlayWindow.Hide();
-        OcrStatusText.Text = "英語OCRを停止しました。";
+        OcrStatusText.Text = "読み取り・翻訳を停止しました。";
         StartOcrButton.IsEnabled = true;
         StopOcrButton.IsEnabled = false;
     }
@@ -314,7 +458,16 @@ public partial class MainWindow : Window
         {
             StopOcrCapture();
             _ocrOverlayWindow.Hide();
-            OcrStatusText.Text = "開始待ち: 選択したゲームのウィンドウを前面にしてください。";
+            OcrStatusText.Text = IsManualMode
+                ? $"マニュアル待機中: ゲームを前面にして {_operationSettings.EffectiveHotkey.DisplayName} を押してください。"
+                : "開始待ち: 選択したゲームのウィンドウを前面にしてください。";
+            return;
+        }
+
+        if (IsManualMode)
+        {
+            // Manual mode creates a capture session only in response to the key.
+            _ocrOverlayWindow.UpdatePosition(target.Handle);
             return;
         }
 
@@ -324,15 +477,27 @@ public partial class MainWindow : Window
             return;
         }
 
+        StartCapture(target);
+    }
+
+    private void StartCapture(WindowTarget target)
+    {
         try
         {
-            var captureService = new WindowOcrCaptureService(target, _ocrCaptureRegion);
+            var captureService = new WindowOcrCaptureService(target, _ocrCaptureRegion, _operationSettings.Mode);
             captureService.TextRecognized += OnOcrTextRecognized;
             captureService.ContentChanging += OnOcrContentChanging;
             captureService.ErrorOccurred += OnOcrErrorOccurred;
             _ocrCaptureService = captureService;
             _captureTargetHandle = target.Handle;
-                    OcrStatusText.Text = "英語OCRを開始しました。英文が安定すると翻訳します。";
+            OcrStatusText.Text = IsManualMode ? "画面を1枚取得して読み取っています。"
+                : "英語OCRを開始しました。英文が安定すると翻訳します。";
+            captureService.Start();
+            if (IsManualMode)
+            {
+                _manualCaptureTimeout = new CancellationTokenSource();
+                _ = WatchManualCaptureAsync(captureService, _manualCaptureTimeout.Token);
+            }
         }
         catch (Exception exception)
         {
@@ -344,6 +509,21 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task WatchManualCaptureAsync(WindowOcrCaptureService captureService, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(10), token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            return;
+        }
+        if (_isClosed || !ReferenceEquals(_ocrCaptureService, captureService)) return;
+        StopOcrCapture();
+        OcrStatusText.Text = "読み取りがタイムアウトしました。ゲームを確認し、もう一度実行キーを押してください。";
+    }
+
     private void OnOcrTextRecognized(object? sender, OcrTextRecognizedEventArgs e)
     {
         Dispatcher.BeginInvoke(() =>
@@ -353,6 +533,9 @@ public partial class MainWindow : Window
             {
                 return;
             }
+
+            // Keep translation state, but release the one-shot capture and its GPU resources.
+            if (IsManualMode) ReleaseCaptureService();
 
             var recognizedText = e.Text?.Trim() ?? string.Empty;
             ShowOcrTimings(e.Timings);
@@ -371,7 +554,9 @@ public partial class MainWindow : Window
                 _translationMeasurement = null;
                 UpdateTranslationTimingDisplay();
                 _ocrOverlayWindow.Hide();
-                OcrStatusText.Text = "会話文を探しています。";
+                OcrStatusText.Text = IsManualMode
+                    ? $"文字を認識できませんでした。表示を確認して {_operationSettings.EffectiveHotkey.DisplayName} を押してください。"
+                    : "会話文を探しています。";
             }
             else if (TargetWindowComboBox.SelectedItem is WindowTarget target)
             {
@@ -395,7 +580,8 @@ public partial class MainWindow : Window
                     OcrStatusText.Text = "日本語訳をゲーム画面の上部に表示しています。";
                     if (_translationMeasurement is { State: not ("完了" or "再利用") } cachedMeasurement)
                     {
-                        cachedMeasurement.StabilityWait = Stopwatch.GetElapsedTime(cachedMeasurement.FirstResultTimestamp, displayStarted);
+                        cachedMeasurement.StabilityWait = IsManualMode ? TimeSpan.Zero
+                            : Stopwatch.GetElapsedTime(cachedMeasurement.FirstResultTimestamp, displayStarted);
                         cachedMeasurement.Display = Stopwatch.GetElapsedTime(displayStarted);
                         cachedMeasurement.Total = Stopwatch.GetElapsedTime(cachedMeasurement.FirstFrameTimestamp);
                         cachedMeasurement.FirstDisplayTotal = cachedMeasurement.Total;
@@ -469,7 +655,8 @@ public partial class MainWindow : Window
                 CharacterMemory: null,
                 RecentConversation: Array.Empty<string>());
 
-            measurement.StabilityWait = Stopwatch.GetElapsedTime(measurement.FirstResultTimestamp);
+            measurement.StabilityWait = IsManualMode ? TimeSpan.Zero
+                : Stopwatch.GetElapsedTime(measurement.FirstResultTimestamp);
             measurement.State = "API応答待ち";
             UpdateTranslationTimingDisplay();
             var apiStarted = Stopwatch.GetTimestamp();
@@ -739,6 +926,7 @@ public partial class MainWindow : Window
                 CancelPendingTranslation();
                 FinishTranslationMeasurement("OCRエラー");
                 OcrStatusText.Text = e.Message;
+                if (IsManualMode) ReleaseCaptureService();
             }
         });
     }
@@ -751,6 +939,14 @@ public partial class MainWindow : Window
         CancelPendingTranslation();
         FinishTranslationMeasurement("中断");
 
+        ReleaseCaptureService();
+    }
+
+    private void ReleaseCaptureService()
+    {
+        _manualCaptureTimeout?.Cancel();
+        _manualCaptureTimeout?.Dispose();
+        _manualCaptureTimeout = null;
         if (_ocrCaptureService is null)
         {
             _captureTargetHandle = IntPtr.Zero;

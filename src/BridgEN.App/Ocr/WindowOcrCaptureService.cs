@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using BridgEN.App.Input;
+using BridgEN.App.Configuration;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
@@ -29,6 +30,7 @@ public sealed class WindowOcrCaptureService : IDisposable
     private readonly GraphicsCaptureItem _captureItem;
     private readonly OcrEngine _ocrEngine;
     private readonly OcrCaptureRegion? _captureRegion;
+    private readonly OcrOperationMode _operationMode;
     private readonly object _lifecycleGate = new();
     private readonly OcrTextStabilizer _textStabilizer = new();
     private readonly OcrEngine?[] _recoveryEngines = new OcrEngine?[2];
@@ -46,9 +48,12 @@ public sealed class WindowOcrCaptureService : IDisposable
     private int _isRecognizing;
     private int _isDisposed;
     private int _errorReported;
+    private bool _manualCaptureStarted;
+    private bool _started;
     private Windows.Graphics.SizeInt32 _frameSize;
 
-    public WindowOcrCaptureService(WindowTarget target, OcrCaptureRegion? captureRegion)
+    public WindowOcrCaptureService(WindowTarget target, OcrCaptureRegion? captureRegion,
+        OcrOperationMode operationMode = OcrOperationMode.Automatic)
     {
         if (captureRegion is not null && !captureRegion.IsValid)
         {
@@ -56,6 +61,7 @@ public sealed class WindowOcrCaptureService : IDisposable
         }
 
         _captureRegion = captureRegion;
+        _operationMode = operationMode;
 
         if (!GraphicsCaptureSession.IsSupported())
         {
@@ -94,7 +100,6 @@ public sealed class WindowOcrCaptureService : IDisposable
                 _frameSize);
             _captureSession = _framePool.CreateCaptureSession(_captureItem);
             _framePool.FrameArrived += OnFrameArrived;
-            _captureSession.StartCapture();
         }
         catch
         {
@@ -109,6 +114,17 @@ public sealed class WindowOcrCaptureService : IDisposable
     public event EventHandler<OcrTextRecognizedEventArgs>? TextRecognized;
     public event EventHandler? ContentChanging;
     public event EventHandler<OcrErrorEventArgs>? ErrorOccurred;
+
+    public void Start()
+    {
+        lock (_lifecycleGate)
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) != 0, this);
+            if (_started) return;
+            _captureSession!.StartCapture();
+            _started = true;
+        }
+    }
 
     public void Dispose()
     {
@@ -172,7 +188,9 @@ public sealed class WindowOcrCaptureService : IDisposable
                 var now = Stopwatch.GetTimestamp();
                 var elapsed = Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastRecognitionTimestamp), now);
                 var interval = Volatile.Read(ref _needsConfirmation) ? ConfirmationInterval : RecognitionInterval;
-                if (elapsed < interval || Interlocked.CompareExchange(ref _isRecognizing, 1, 0) != 0)
+                if ((_operationMode == OcrOperationMode.Manual && Volatile.Read(ref _manualCaptureStarted))
+                    || (_operationMode == OcrOperationMode.Automatic && elapsed < interval)
+                    || Interlocked.CompareExchange(ref _isRecognizing, 1, 0) != 0)
                 {
                     return;
                 }
@@ -196,6 +214,11 @@ public sealed class WindowOcrCaptureService : IDisposable
 
                 return;
             }
+
+            // A manual request consumes exactly one frame, even if OCR returns no text.
+            // Leave resize-only frames unclaimed so the new frame size can arrive.
+            if (_operationMode == OcrOperationMode.Manual)
+                Volatile.Write(ref _manualCaptureStarted, true);
 
             bitmap = await SoftwareBitmap.CreateCopyFromSurfaceAsync(frame.Surface);
             frame.Dispose();
@@ -234,6 +257,28 @@ public sealed class WindowOcrCaptureService : IDisposable
             var layoutTime = Stopwatch.GetElapsedTime(stageStartedTimestamp);
             stageStartedTimestamp = Stopwatch.GetTimestamp();
             var sourceText = text;
+            if (_operationMode == OcrOperationMode.Manual)
+            {
+                // Compare image treatments within this snapshot. Do not wait for
+                // additional frames or retain a candidate from an earlier press.
+                var best = await RecognizeBestTextAsync(bitmap, text, _preferredTreatment);
+                var manualRecoveryTime = Stopwatch.GetElapsedTime(stageStartedTimestamp);
+                stageStartedTimestamp = Stopwatch.GetTimestamp();
+                text = OcrTextQuality.Normalize(best.Text);
+                var qualityTime = Stopwatch.GetElapsedTime(stageStartedTimestamp);
+                var total = Stopwatch.GetElapsedTime(frameStartedTimestamp);
+                var manualObservation = new OcrTextObservation(text, 1, true, TimeSpan.Zero, "manual", true);
+                OcrDiagnostics.Record(manualObservation, sourceText, text, best.Treatment, true,
+                    result.Lines.Count, recognizedLines.Count);
+                if (Volatile.Read(ref _isDisposed) == 0)
+                    TextRecognized?.Invoke(this, new OcrTextRecognizedEventArgs(
+                        text, 1, true, TimeSpan.Zero,
+                        new OcrProcessingTimings(frameStartedTimestamp, captureTime, cropTime,
+                            preprocessingTime, recognitionTime, layoutTime, manualRecoveryTime,
+                            qualityTime, total, total)));
+                return;
+            }
+
             var contentChanged = _textStabilizer.HasContentChanged(signature, text);
             if (contentChanged && Volatile.Read(ref _isDisposed) == 0)
             {

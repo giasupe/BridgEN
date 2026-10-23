@@ -20,9 +20,15 @@ BridgEN/
 │     ├─ AssemblyInfo.cs                WPFのテーマ参照などの設定
 │     ├─ MainWindow.xaml                クライアント画面の部品と配置
 │     ├─ MainWindow.xaml.cs             操作・OCR・翻訳・表示をつなぐ進行役
+│     ├─ Configuration/
+│     │  ├─ OcrOperationSettings.cs     操作モードと実行キーの設定データ
+│     │  ├─ OcrOperationSettingsStore.cs 操作設定の読込・保存
+│     │  ├─ TranslationConnectionSettings.cs 翻訳接続の設定データ
+│     │  └─ TranslationSettingsStore.cs 接続設定と暗号化したトークンの保存
 │     ├─ Input/
 │     │  ├─ WindowTarget.cs             ウィンドウの一覧取得・前面判定
-│     │  └─ GlobalKeyboardMonitor.cs    Z / Enterの押下を監視
+│     │  ├─ GlobalKeyboardMonitor.cs    Z / Enterとマニュアル実行キーを監視
+│     │  └─ ManualOcrHotkey.cs          実行キーと修飾キーの検証・表示
 │     ├─ Ocr/
 │     │  ├─ OcrCaptureRegion.cs         読む範囲の座標データ
 │     │  ├─ OcrRegionSelectionWindow.xaml / .xaml.cs
@@ -76,7 +82,13 @@ BridgEN/
 
 ### 2. 開始して、前面のゲームだけを読む
 
-開始ボタンを押すと、`MainWindow.xaml.cs`が選択したゲームの前面状態を確認します。ゲームが前面になると`WindowOcrCaptureService`を作り、Windows Graphics Captureを開始します。
+`OcrOperationSettings`はオートマチックを初期値とし、実行キーはF8を初期値とします。変更は`OcrOperationSettingsStore`が`%LOCALAPPDATA%\BridgEN\ocr-settings.json`へ保存します。保存済みの選択は次回起動時にも使います。接続設定と招待トークンには触れません。
+
+オートマチックで開始ボタンを押すと、`MainWindow.xaml.cs`が選択したゲームの前面状態を確認します。ゲームが前面になると`WindowOcrCaptureService`を作ります。イベント購読と現在のサービスへの登録を済ませてから`Start()`でWindows Graphics Captureを開始するため、最初の結果を受け取れます。
+
+マニュアルで「待機を開始」を押した段階ではキャプチャサービスを作りません。`GlobalKeyboardMonitor`が実行キーを検出し、UIスレッドへ処理を予約します。フック内でOCRや通信は行いません。予約を実行するときにもモード・対象ウィンドウ・前面状態を確認し、マニュアル指定のサービスを作って開始します。サイズ変更用のフレームを除く最初の1枚にOCRと補正比較を適用し、結果を受け取るとキャプチャだけを解放します。文章の連続確認は省き、同じ翻訳・キャッシュ・ストリーミング表示の経路へ渡します。空読みやエラー時に自動再実行せず、次のキーを待ちます。結果が10秒以内に返らない場合もキャプチャを止めます。
+
+キーの長押しはdown/upの状態で抑制します。OCR中の追加押下は予約しません。翻訳受信中の新しい押下は前の翻訳を取り消して新しい画面を読み取ります。モード変更・停止・対象変更・前面離脱でも進行中の処理を止め、古い結果が新しい処理へ混ざらないようにします。
 
 前面状態は約250msごとに確認します。ゲームが前面でなくなるとキャプチャと進行中の翻訳を止め、オーバーレイを隠します。完成済みの結果と計測値はクライアントで確認できます。
 
@@ -84,7 +96,7 @@ APIキーが設定されている場合、開始時に認証不要のHEADリク�
 
 ### 3. 画面を取得して範囲を切り出す
 
-`WindowOcrCaptureService`が画像を取得し、選択した範囲を切り出します。
+`WindowOcrCaptureService`が画像を取得し、選択した範囲を切り出します。次の周期処理はオートマチックだけに適用します。マニュアルは押下後の1枚だけを使います。
 
 - 文章を確認している間は、最短250ms間隔です。
 - 確定後と文字がない場合は、通常400ms間隔です。今回、800msから変更しました。
@@ -104,7 +116,7 @@ Windows OCRの結果が列ごとに分かれる場合があるため、`WindowsO
 
 ### 6. 採用する英文を決め、翻訳へ進めるか確認する
 
-`OcrTextStabilizer`が、同じ台詞の読み取りの揺れと、新しい台詞・文字送りを区別します。近い候補が行き来する場合は良い候補を保持します。
+オートマチックでは`OcrTextStabilizer`が、同じ台詞の読み取りの揺れと、新しい台詞・文字送りを区別します。近い候補が行き来する場合は良い候補を保持します。マニュアルはこの連続確認と`OcrTranslationReadiness`を通さず、その1枚の認識結果を翻訳対象にします。
 
 次に`OcrTranslationReadiness`で送信可能か確認します。
 
@@ -132,4 +144,4 @@ Windows OCRの結果が列ごとに分かれる場合があるため、`WindowsO
 
 OCR側は`OcrProcessingTimings`、翻訳側は`MainWindow.xaml.cs`内の`TranslationMeasurement`で時間を管理します。左側は最新フレームのOCR処理、右側は現在の文章の初回OCRから翻訳表示までの処理です。
 
-`GlobalKeyboardMonitor`はZとEnterを監視し、ゲームが前面にある場合の押下回数を数えます。現在はOCRや翻訳を始めるきっかけには使っていません。
+`GlobalKeyboardMonitor`はZとEnterの押下カウントと、マニュアル実行キーの検出を担当します。マニュアル実行キーはCtrl・Shift・Alt・Windowsキーとの組み合わせを指定できます。入力を消費せず、ゲームにもそのまま渡します。Z / Enterを実行キーに設定しない限り、従来のカウント自体がOCRを始めることはありません。
