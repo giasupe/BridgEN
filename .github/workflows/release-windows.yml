@@ -84,7 +84,11 @@ jobs:
           # Retry uploads only while the release is still a draft.
           gh release upload $tag $zipPath $checksumPath --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Uploading release assets failed.' }
-          $releaseJson = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag"
+          $releaseId = gh release view $tag --json databaseId --jq .databaseId
+          if ($LASTEXITCODE -ne 0 -or $releaseId -notmatch '^[0-9]+$') {
+            throw 'Reading the draft release ID failed.'
+          }
+          $releaseJson = gh api "repos/$env:GITHUB_REPOSITORY/releases/$releaseId"
           if ($LASTEXITCODE -ne 0) { throw 'Reading uploaded release assets failed.' }
           $release = $releaseJson | ConvertFrom-Json
           if (-not $release.draft) { throw 'The release was published before verification.' }
