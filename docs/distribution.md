@@ -100,6 +100,12 @@ Workerは本文・画像・生トークンを保存せず、コードからリ�
 
 ## 6. GitHub Releases
 
+`.github/workflows/release-windows.yml`は、`v0.1.0-beta.2`のようなタグをpushすると、そのタグのコードからWindows版を発行し、ZIPとSHA-256ファイルを添付してReleaseを公開します。タグとアプリのVersionが一致し、`docs/release-notes/版番号.md`が存在する必要があります。先に下書きへ添付し、アップロードされたファイルのサイズとSHA-256を確認してから公開します。`-beta.2`などの接尾辞がある版はPre-releaseにします。
+
+新しい版を公開するときは、版番号とリリースノートを更新して開発ブランチへpushし、そのコミットに新しいタグを付けてpushします。すでに公開されたタグのReleaseは変更しません。
+
+画面から手動で公開する場合は、次の手順を使います。
+
 1. サーバー接続・OCR・ストリーミング・認証失敗・利用上限・キャンセルを確認する。
 2. GitHubのReleasesで下書きを作り、タグを`v0.1.0-beta.2`とする。この版のTargetは、最新の変更をpushした`Feature/ManualMode`を選ぶ。
 3. ZIPとSHA-256ファイルを添付する。GitHubが自動生成するSource code ZIPは、起動用の配布物ではありません。

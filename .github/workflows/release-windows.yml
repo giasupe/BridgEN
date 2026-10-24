@@ -1,0 +1,105 @@
+name: Publish Windows release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build the Windows distribution
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
+            throw 'The release tag is not a supported version.'
+          }
+          $version = $env:RELEASE_TAG.Substring(1)
+          [xml]$project = Get-Content -LiteralPath './src/BridgEN.App/BridgEN.App.csproj' -Raw
+          if ([string]$project.Project.PropertyGroup.Version -ne $version) {
+            throw 'The tag and application version must match.'
+          }
+          $notesPath = "docs/release-notes/$version.md"
+          if (-not (Test-Path -LiteralPath $notesPath)) {
+            throw "Release notes are missing: $notesPath"
+          }
+          & ./scripts/publish-win.ps1 -Version $version
+          if ($LASTEXITCODE -ne 0) { throw 'Publishing the Windows distribution failed.' }
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Upload assets and publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:RELEASE_TAG
+          $version = $env:RELEASE_VERSION
+          $zipPath = "artifacts/BridgEN-$version-win-x64.zip"
+          $checksumPath = "$zipPath.sha256"
+          $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $recordedHash = ((Get-Content -LiteralPath $checksumPath -Raw).Trim() -split '\s+')[0]
+          if ($zipHash -ne $recordedHash) { throw 'The ZIP checksum does not match.' }
+          $prerelease = $version.Contains('-').ToString().ToLowerInvariant()
+          $latest = (-not $version.Contains('-')).ToString().ToLowerInvariant()
+
+          $existingJson = gh release view $tag --json isDraft,url 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $existing = $existingJson | ConvertFrom-Json
+            if (-not $existing.isDraft) {
+              Write-Output "The release is already published: $($existing.url)"
+              exit 0
+            }
+          } else {
+            gh release create $tag --verify-tag --draft "--prerelease=$prerelease" --latest=false `
+              --title "BridgEN $tag" --notes-file "docs/release-notes/$version.md"
+            if ($LASTEXITCODE -ne 0) { throw 'Creating the draft release failed.' }
+          }
+
+          # Retry uploads only while the release is still a draft.
+          gh release upload $tag $zipPath $checksumPath --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Uploading release assets failed.' }
+          $releaseJson = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { throw 'Reading uploaded release assets failed.' }
+          $release = $releaseJson | ConvertFrom-Json
+          if (-not $release.draft) { throw 'The release was published before verification.' }
+          foreach ($path in @($zipPath, $checksumPath)) {
+            $file = Get-Item -LiteralPath $path
+            $asset = @($release.assets | Where-Object name -eq $file.Name)
+            if ($asset.Count -ne 1 -or $asset[0].state -ne 'uploaded' -or $asset[0].size -ne $file.Length) {
+              throw "Uploaded asset is missing or incomplete: $($file.Name)"
+            }
+            $expectedDigest = 'sha256:' + (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($asset[0].digest -ne $expectedDigest) {
+              throw "Uploaded asset digest does not match: $($file.Name)"
+            }
+          }
+          gh release edit $tag --draft=false "--prerelease=$prerelease" "--latest=$latest"
+          if ($LASTEXITCODE -ne 0) { throw 'Publishing the release failed.' }
+          gh release view $tag --json url --jq .url
+          if ($LASTEXITCODE -ne 0) { throw 'Reading the published release URL failed.' }
