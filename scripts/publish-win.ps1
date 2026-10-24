@@ -1,6 +1,6 @@
 param(
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$')]
-    [string]$Version = '0.1.0-beta.1',
+    [string]$Version = '0.1.0-beta.2',
     [ValidateSet('win-x64')]
     [string]$Runtime = 'win-x64',
     [string]$RelayUrl = ''

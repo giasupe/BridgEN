@@ -6,7 +6,7 @@
 
 ## ダウンロード
 
-**[GitHub Releasesから配布版をダウンロード](https://github.com/giasupe/speciRPG/releases)**
+**[GitHub Releasesから配布版をダウンロード](https://github.com/giasupe/BridgEN/releases)**
 
 Releaseの **Assets** にある `BridgEN-バージョン-win-x64.zip` を選んでください。`Source code` は開発用のソースコードで、アプリの起動用ZIPではありません。
 
@@ -80,7 +80,7 @@ DLLや設定ファイルも必要です。ZIP内から直接起動したり、EX
 - 翻訳の受信中にもう一度押すと、前の翻訳を取り消して新しい画面を読み取ります。同じ英文の完成済み訳があれば再利用します。
 - 実行キーはゲームにも届くため、ゲーム内の操作と重ならないキーを選んでください。
 
-マニュアルは `Feature/ManualMode` ブランチで追加した機能です。公開済みの `v0.1.0-beta.1` には含まれません。
+マニュアルは `v0.1.0-beta.2` 以降で利用できます。
 
 - 読み取りを止めるときは、BridgENの「停止」を押します。
 - 別のアプリへ切り替えている間は読み取りと翻訳を停止します。ゲームへ戻ると、オートマチックは自動で再開し、マニュアルは次の実行キーを待ちます。
@@ -134,7 +134,7 @@ Add-WindowsCapability -Online -Name 'Language.OCR~~~en-US~0.0.1.0'
 - **招待トークンが無効と表示される**：管理者から受け取ったトークンを確認し、保存し直してください。解決しない場合は管理者へ連絡してください。
 - **翻訳APIのエラー後に再試行したい**：OCRを一度停止してから、再開してください。
 
-不具合を報告する場合は、[GitHub Issues](https://github.com/giasupe/speciRPG/issues) に、利用バージョン・Windowsのバージョン・ゲーム名・再現手順・表示されたエラーを記載してください。APIキーや招待トークンは載せないでください。
+不具合を報告する場合は、[GitHub Issues](https://github.com/giasupe/BridgEN/issues) に、利用バージョン・Windowsのバージョン・ゲーム名・再現手順・表示されたエラーを記載してください。APIキーや招待トークンは載せないでください。
 
 ## アップデート
 

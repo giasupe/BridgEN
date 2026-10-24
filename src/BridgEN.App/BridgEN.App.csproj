@@ -10,7 +10,7 @@
     <AssemblyName>BridgEN</AssemblyName>
     <RootNamespace>BridgEN.App</RootNamespace>
     <Product>BridgEN</Product>
-    <Version>0.1.0-beta.1</Version>
+    <Version>0.1.0-beta.2</Version>
     <!-- Keep framework/library messages only for the supported UI languages. -->
     <SatelliteResourceLanguages>en;ja</SatelliteResourceLanguages>
   </PropertyGroup>

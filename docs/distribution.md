@@ -94,14 +94,14 @@ Workerは本文・画像・生トークンを保存せず、コードからリ�
 
 既定の公開URLは`src/BridgEN.App/bridgen.defaults.json`から読み込み、通常起動と配布ZIPの両方に反映されます。発行時だけ別の接続先にする場合は`.\scripts\publish-win.ps1 -RelayUrl https://別のWorker.workers.dev`を指定します。保存済みの接続先があればそちらを優先し、利用者が起動後に変更することもできます。
 
-`artifacts/BridgEN-0.1.0-beta.1-win-x64.zip`と`.zip.sha256`が作られます。.NETを同梱し、`BridgEN.exe`と必要なDLL、公開URLだけの既定設定、利用説明を含みます。Geminiキーや招待トークンは含めません。WPFとWinRTの互換性のため初期版はトリミング・単一ファイル化を使いません。プロジェクト名・名前空間もBridgENに統一しています。
+`artifacts/BridgEN-0.1.0-beta.2-win-x64.zip`と`.zip.sha256`が作られます。.NETを同梱し、`BridgEN.exe`と必要なDLL、公開URLだけの既定設定、利用説明を含みます。Geminiキーや招待トークンは含めません。WPFとWinRTの互換性のため初期版はトリミング・単一ファイル化を使いません。プロジェクト名・名前空間もBridgENに統一しています。
 
 `SatelliteResourceLanguages`を`en;ja`に設定し、.NETやWPFの表示メッセージ用データは英語・日本語だけを同梱します。英語は通常DLL本体に含まれるため、独立した`en`フォルダーがない場合があります。この設定はOCRの認識言語やGeminiの翻訳言語を変更するものではありません。
 
 ## 6. GitHub Releases
 
 1. サーバー接続・OCR・ストリーミング・認証失敗・利用上限・キャンセルを確認する。
-2. GitHubのReleasesで下書きを作り、タグを`v0.1.0-beta.1`とする。
+2. GitHubのReleasesで下書きを作り、タグを`v0.1.0-beta.2`とする。この版のTargetは、最新の変更をpushした`Feature/ManualMode`を選ぶ。
 3. ZIPとSHA-256ファイルを添付する。GitHubが自動生成するSource code ZIPは、起動用の配布物ではありません。
 4. Pre-releaseにし、対応環境・英語OCRの導入・利用上限・英文がGoogleへ送られることを記載する。
 5. 招待した利用者へトークンを個別に渡してから公開する。トークンはRelease本文や公開Issueに書かない。
